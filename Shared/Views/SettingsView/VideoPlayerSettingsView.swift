@@ -321,7 +321,7 @@ struct VideoPlayerSettingsView: View {
             }
             #endif
 
-            Stepper(L10n.subtitleSize, value: $subtitleSize, in: 1 ... 20, step: 1) {
+            Stepper(L10n.subtitleSize, value: $subtitleSize, in: 1 ... 200, step: 1) {
                 LabeledContent(L10n.subtitleSize) {
                     Text(subtitleSize.description)
                         .foregroundStyle(.secondary)

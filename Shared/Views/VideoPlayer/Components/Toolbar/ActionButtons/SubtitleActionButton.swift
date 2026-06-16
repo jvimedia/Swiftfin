@@ -24,6 +24,8 @@ extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
 
         @State
         private var selectedSubtitleStreamIndex: Int?
+        @State
+        private var syncTick: Bool = false
 
         private var systemImage: String {
             if selectedSubtitleStreamIndex == nil {
@@ -52,38 +54,46 @@ extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
         @ViewBuilder
         private func sizeControls() -> some View {
             Button {
-                subtitleSize = min(20, subtitleSize + 1)
+                subtitleSize += 1
             } label: {
                 Label("Larger text", systemImage: "textformat.size.larger")
             }
+            .menuActionDismissBehavior(.disabled)
 
             Button {
                 subtitleSize = max(1, subtitleSize - 1)
             } label: {
                 Label("Smaller text", systemImage: "textformat.size.smaller")
             }
+            .menuActionDismissBehavior(.disabled)
         }
 
         @ViewBuilder
         private func syncControls() -> some View {
             Button {
                 subtitleOffset.wrappedValue += .milliseconds(500)
+                syncTick.toggle()
             } label: {
                 Label("+0.5s (\(offsetLabel))", systemImage: "clock.badge.plus")
             }
+            .menuActionDismissBehavior(.disabled)
 
             Button {
                 subtitleOffset.wrappedValue -= .milliseconds(500)
+                syncTick.toggle()
             } label: {
                 Label("-0.5s (\(offsetLabel))", systemImage: "clock.badge.minus")
             }
+            .menuActionDismissBehavior(.disabled)
 
             if subtitleOffset.wrappedValue != .zero {
                 Button(role: .destructive) {
                     subtitleOffset.wrappedValue = .zero
+                    syncTick.toggle()
                 } label: {
                     Label("Reset sync", systemImage: "arrow.counterclockwise")
                 }
+                .menuActionDismissBehavior(.disabled)
             }
         }
 

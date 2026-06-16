@@ -27,9 +27,12 @@ final class VLCSubtitleOverlayModel: ObservableObject {
     private(set) var status: String = "idle"
     @Published
     private(set) var text: String?
+    @Published
+    private(set) var previewText: String? = nil
 
     private var cues: [Cue] = []
     private var loadTask: Task<Void, Never>?
+    private var previewTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
 
     func bind(to playbackItem: MediaPlayerItem) {
@@ -127,6 +130,17 @@ final class VLCSubtitleOverlayModel: ObservableObject {
     func update(seconds: Duration, offset: Duration) {
         let target = seconds + offset
         text = cues.first(where: { $0.start <= target && target <= $0.end })?.text
+    }
+
+    func showSizePreview(size: Int) {
+        previewTask?.cancel()
+        previewText = "Size: \(size)"
+        previewTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(2))
+                self?.previewText = nil
+            } catch {}
+        }
     }
 
     private static func decode(data: Data) -> String {
@@ -500,8 +514,8 @@ struct VLCSubtitleOverlayView: View {
 
     var body: some View {
         Group {
-            if let text = model.text {
-                Text(styledText(text))
+            if let display = model.previewText ?? model.text {
+                Text(styledText(display))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 48)
                     .padding(.vertical, 12)
@@ -524,6 +538,9 @@ struct VLCSubtitleOverlayView: View {
         }
         .onChange(of: subtitleOffset.wrappedValue) { _, newValue in
             model.update(seconds: manager.seconds, offset: newValue)
+        }
+        .onChange(of: subtitleSize) { _, newSize in
+            model.showSizePreview(size: newSize)
         }
     }
 }
