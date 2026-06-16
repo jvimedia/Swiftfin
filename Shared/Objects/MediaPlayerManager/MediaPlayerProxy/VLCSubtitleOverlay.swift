@@ -95,12 +95,10 @@ final class VLCSubtitleOverlayModel: ObservableObject {
             let srtString: String
 
             if let deliveryURL = stream.resolvedDeliveryURL {
-                // External sidecar file — fetch raw data and decode
                 let request: Request<Data> = .init(url: deliveryURL)
                 let response = try await client.send(request)
                 srtString = Self.decode(data: response.value)
             } else if let index = stream.index, !itemID.isEmpty, !mediaSourceID.isEmpty {
-                // Embedded subtitle — ask Jellyfin to convert it to SRT
                 let request = Paths.getSubtitleWithTicks(
                     routeItemID: itemID,
                     routeMediaSourceID: mediaSourceID,
@@ -135,19 +133,15 @@ final class VLCSubtitleOverlayModel: ObservableObject {
         if let string = String(data: data, encoding: .utf8) {
             return string.removingBOMPrefix()
         }
-
         if let string = String(data: data, encoding: .utf16) {
             return string.removingBOMPrefix()
         }
-
         if let string = String(data: data, encoding: .unicode) {
             return string.removingBOMPrefix()
         }
-
         if let string = String(data: data, encoding: .isoLatin1) {
             return string.removingBOMPrefix()
         }
-
         return String(decoding: data, as: UTF8.self).removingBOMPrefix()
     }
 
@@ -179,9 +173,7 @@ final class VLCSubtitleOverlayModel: ObservableObject {
         guard timingParts.count == 2,
               let start = parseTimestamp(timingParts[0]),
               let end = parseTimestamp(timingParts[1])
-        else {
-            return nil
-        }
+        else { return nil }
 
         let textLines = lines.dropFirst(timingLineIndex + 1)
         guard !textLines.isEmpty else { return nil }
@@ -208,9 +200,7 @@ final class VLCSubtitleOverlayModel: ObservableObject {
               let minutes = Int(parts[1]),
               let seconds = Int(secondsParts[0]),
               let milliseconds = Int(secondsParts[1])
-        else {
-            return nil
-        }
+        else { return nil }
 
         let totalMilliseconds =
             (((hours * 60) + minutes) * 60 + seconds) * 1000 + milliseconds
@@ -225,6 +215,188 @@ private extension String {
         hasPrefix("\u{FEFF}") ? String(dropFirst()) : self
     }
 }
+
+// MARK: - Subtitle style parsing
+
+private struct SubtitleStyle {
+    var bold: Bool = false
+    var italic: Bool = false
+    var underline: Bool = false
+    var color: Color?
+}
+
+private func parseHTMLTag(_ tag: String, stack: inout [SubtitleStyle]) {
+    let t = tag.trimmingCharacters(in: .whitespaces).lowercased()
+    switch true {
+    case t == "b":
+        var s = stack.last ?? SubtitleStyle()
+        s.bold = true
+        stack.append(s)
+    case t == "/b":
+        if stack.count > 1 { stack.removeLast() }
+    case t == "i":
+        var s = stack.last ?? SubtitleStyle()
+        s.italic = true
+        stack.append(s)
+    case t == "/i":
+        if stack.count > 1 { stack.removeLast() }
+    case t == "u":
+        var s = stack.last ?? SubtitleStyle()
+        s.underline = true
+        stack.append(s)
+    case t == "/u":
+        if stack.count > 1 { stack.removeLast() }
+    case t.hasPrefix("font"):
+        var s = stack.last ?? SubtitleStyle()
+        if let colorVal = extractHTMLAttribute("color", from: tag) {
+            s.color = parseHTMLColor(colorVal)
+        }
+        stack.append(s)
+    case t == "/font":
+        if stack.count > 1 { stack.removeLast() }
+    default:
+        break
+    }
+}
+
+private func extractHTMLAttribute(_ name: String, from tag: String) -> String? {
+    var i = tag.startIndex
+    let lname = name.lowercased()
+    let ltag = tag.lowercased()
+    while i < ltag.endIndex {
+        guard let found = ltag[i...].range(of: lname) else { break }
+        var j = ltag.index(found.upperBound, offsetBy: 0)
+        while j < ltag.endIndex, ltag[j] == " " {
+            j = ltag.index(after: j)
+        }
+        guard j < ltag.endIndex, ltag[j] == "=" else { i = found.upperBound
+            continue
+        }
+        j = ltag.index(after: j)
+        while j < ltag.endIndex, ltag[j] == " " {
+            j = ltag.index(after: j)
+        }
+        guard j < ltag.endIndex else { break }
+        let quote = ltag[j]
+        if quote == "\"" || quote == "'" {
+            let start = tag.index(after: j)
+            if let end = tag[start...].firstIndex(of: Character(String(quote))) {
+                return String(tag[start ..< end])
+            }
+        } else {
+            // Unquoted value
+            let start = j
+            var end = j
+            while end < tag.endIndex, tag[end] != " ", tag[end] != ">" {
+                end = tag.index(after: end)
+            }
+            return String(tag[start ..< end])
+        }
+        break
+    }
+    return nil
+}
+
+private func parseHTMLColor(_ value: String) -> Color? {
+    let v = value.trimmingCharacters(in: .whitespaces)
+    if v.hasPrefix("#") { return Color(hex: v) }
+    switch v.lowercased() {
+    case "white": return .white
+    case "black": return .black
+    case "red": return .red
+    case "green": return .green
+    case "blue": return .blue
+    case "yellow": return .yellow
+    case "cyan": return .cyan
+    case "magenta": return Color(red: 1, green: 0, blue: 1)
+    case "gray", "grey": return .gray
+    default: return nil
+    }
+}
+
+// Parses ASS override block content (the part inside {}) and modifies the top style.
+private func parseASSBlock(_ block: String, stack: inout [SubtitleStyle]) {
+    guard !block.isEmpty else { return }
+    var s = stack.last ?? SubtitleStyle()
+    var modified = false
+    var remaining = Substring(block)
+
+    while let slash = remaining.firstIndex(of: "\\") {
+        remaining = remaining[remaining.index(after: slash)...]
+
+        if remaining.hasPrefix("b1") {
+            s.bold = true
+            modified = true
+            remaining = remaining.dropFirst(2)
+        } else if remaining.hasPrefix("b0") {
+            s.bold = false
+            modified = true
+            remaining = remaining.dropFirst(2)
+        } else if remaining.hasPrefix("b") && !(remaining.dropFirst().first?.isNumber ?? false) {
+            // \b with no value treated as bold on
+            s.bold = true
+            modified = true
+            remaining = remaining.dropFirst(1)
+        } else if remaining.hasPrefix("i1") {
+            s.italic = true
+            modified = true
+            remaining = remaining.dropFirst(2)
+        } else if remaining.hasPrefix("i0") {
+            s.italic = false
+            modified = true
+            remaining = remaining.dropFirst(2)
+        } else if remaining.hasPrefix("u1") {
+            s.underline = true
+            modified = true
+            remaining = remaining.dropFirst(2)
+        } else if remaining.hasPrefix("u0") {
+            s.underline = false
+            modified = true
+            remaining = remaining.dropFirst(2)
+        } else if remaining.hasPrefix("r") {
+            s = SubtitleStyle()
+            modified = true
+            remaining = remaining.dropFirst(1)
+        } else if remaining.lowercased().hasPrefix("1c&h") {
+            remaining = remaining.dropFirst(4)
+            if let end = remaining.firstIndex(of: "&") {
+                s.color = parseASSColorHex(String(remaining[..<end]))
+                modified = true
+                remaining = remaining[remaining.index(after: end)...]
+            }
+        } else if remaining.lowercased().hasPrefix("c&h") {
+            remaining = remaining.dropFirst(3)
+            if let end = remaining.firstIndex(of: "&") {
+                s.color = parseASSColorHex(String(remaining[..<end]))
+                modified = true
+                remaining = remaining[remaining.index(after: end)...]
+            }
+        } else {
+            // Skip unknown tag — advance past its "value" to the next backslash
+            remaining = remaining.dropFirst(1)
+        }
+    }
+
+    guard modified else { return }
+    if stack.isEmpty {
+        stack = [s]
+    } else {
+        stack[stack.count - 1] = s
+    }
+}
+
+// ASS color hex is in BGR order: BBGGRR or AABBGGRR
+private func parseASSColorHex(_ hex: String) -> Color? {
+    var h = hex.uppercased()
+    if h.count == 8 { h = String(h.dropFirst(2)) } // Strip AA
+    guard h.count == 6, let value = UInt32(h, radix: 16) else { return nil }
+    let b = Double((value >> 16) & 0xFF) / 255
+    let g = Double((value >> 8) & 0xFF) / 255
+    let r = Double(value & 0xFF) / 255
+    return Color(red: r, green: g, blue: b)
+}
+
+// MARK: - VLCSubtitleOverlayView
 
 struct VLCSubtitleOverlayView: View {
 
@@ -245,22 +417,92 @@ struct VLCSubtitleOverlayView: View {
     @StateObject
     private var model = VLCSubtitleOverlayModel()
 
-    private var subtitleFont: Font {
+    private var baseUIFont: UIFont {
+        let size = CGFloat(14 + subtitleSize)
         if !subtitleFontName.hasPrefix("."),
-           let uiFont = UIFont(name: subtitleFontName, size: CGFloat(14 + subtitleSize))
+           let font = UIFont(name: subtitleFontName, size: size)
         {
-            return Font(uiFont)
+            return font
         }
-        return .system(size: CGFloat(14 + subtitleSize), weight: .semibold)
+        return .systemFont(ofSize: size, weight: .semibold)
+    }
+
+    private func uiFont(bold: Bool, italic: Bool) -> UIFont {
+        let base = baseUIFont
+        var traits: UIFontDescriptor.SymbolicTraits = []
+        if bold { traits.insert(.traitBold) }
+        if italic { traits.insert(.traitItalic) }
+        guard !traits.isEmpty,
+              let desc = base.fontDescriptor.withSymbolicTraits(traits)
+        else { return base }
+        return UIFont(descriptor: desc, size: base.pointSize)
+    }
+
+    private func styledText(_ raw: String) -> AttributedString {
+        // Pre-process ASS line-break codes
+        let normalized = raw
+            .replacingOccurrences(of: "\\N", with: "\n")
+            .replacingOccurrences(of: "\\n", with: "\n")
+            .replacingOccurrences(of: "\\h", with: "\u{00A0}")
+
+        var result = AttributedString()
+        var styleStack: [SubtitleStyle] = [SubtitleStyle()]
+        var buf = ""
+        var i = normalized.startIndex
+
+        func flush() {
+            guard !buf.isEmpty else { return }
+            let decoded = buf
+                .replacingOccurrences(of: "&amp;", with: "&")
+                .replacingOccurrences(of: "&lt;", with: "<")
+                .replacingOccurrences(of: "&gt;", with: ">")
+                .replacingOccurrences(of: "&nbsp;", with: "\u{00A0}")
+            let s = styleStack.last ?? SubtitleStyle()
+            var container = AttributeContainer()
+            container.swiftUI.font = Font(uiFont(bold: s.bold, italic: s.italic))
+            container.swiftUI.foregroundColor = s.color ?? subtitleColor
+            if s.underline { container.swiftUI.underlineStyle = Text.LineStyle(pattern: .solid) }
+            result += AttributedString(decoded, attributes: container)
+            buf = ""
+        }
+
+        while i < normalized.endIndex {
+            let ch = normalized[i]
+            if ch == "{" {
+                flush()
+                if let end = normalized[i...].firstIndex(of: "}") {
+                    let block = String(normalized[normalized.index(after: i) ..< end])
+                    parseASSBlock(block, stack: &styleStack)
+                    i = normalized.index(after: end)
+                } else {
+                    buf.append(ch)
+                    i = normalized.index(after: i)
+                }
+            } else if ch == "<" {
+                flush()
+                if let end = normalized[i...].firstIndex(of: ">") {
+                    let tag = String(normalized[normalized.index(after: i) ..< end])
+                    parseHTMLTag(tag, stack: &styleStack)
+                    i = normalized.index(after: end)
+                } else {
+                    buf.append(ch)
+                    i = normalized.index(after: i)
+                }
+            } else {
+                buf.append(ch)
+                i = normalized.index(after: i)
+            }
+        }
+
+        flush()
+        return result
     }
 
     var body: some View {
         Group {
             if let text = model.text {
-                Text(text)
-                    .font(subtitleFont)
+                Text(styledText(text))
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(subtitleColor)
                     .padding(.horizontal, 48)
                     .padding(.vertical, 12)
                     .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 14))

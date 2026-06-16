@@ -6,14 +6,18 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Defaults
 import SwiftUI
 
 extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
 
     struct Subtitles: View {
 
-        @Environment(\.isInMenu)
-        private var isInMenu
+        @Default(.VideoPlayer.Subtitle.subtitleSize)
+        private var subtitleSize
+
+        @Environment(\.subtitleOffset)
+        private var subtitleOffset
 
         @EnvironmentObject
         private var manager: MediaPlayerManager
@@ -29,12 +33,71 @@ extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
             }
         }
 
+        private var offsetLabel: String {
+            let s = subtitleOffset.wrappedValue
+            if s == .zero { return "0.0s" }
+            return String(format: "%+.1fs", s.seconds)
+        }
+
         @ViewBuilder
-        private func content(playbackItem: MediaPlayerItem) -> some View {
+        private func trackPicker(playbackItem: MediaPlayerItem) -> some View {
             Picker(L10n.subtitles, selection: $selectedSubtitleStreamIndex) {
                 ForEach(playbackItem.subtitleStreams.prepending(.none), id: \.index) { stream in
                     Text(stream.displayTitle ?? L10n.unknown)
                         .tag(stream.index as Int?)
+                }
+            }
+        }
+
+        @ViewBuilder
+        private func sizeControls() -> some View {
+            Button {
+                subtitleSize = min(20, subtitleSize + 1)
+            } label: {
+                Label("Larger text", systemImage: "textformat.size.larger")
+            }
+
+            Button {
+                subtitleSize = max(1, subtitleSize - 1)
+            } label: {
+                Label("Smaller text", systemImage: "textformat.size.smaller")
+            }
+        }
+
+        @ViewBuilder
+        private func syncControls() -> some View {
+            Button {
+                subtitleOffset.wrappedValue += .milliseconds(500)
+            } label: {
+                Label("+0.5s (\(offsetLabel))", systemImage: "clock.badge.plus")
+            }
+
+            Button {
+                subtitleOffset.wrappedValue -= .milliseconds(500)
+            } label: {
+                Label("-0.5s (\(offsetLabel))", systemImage: "clock.badge.minus")
+            }
+
+            if subtitleOffset.wrappedValue != .zero {
+                Button(role: .destructive) {
+                    subtitleOffset.wrappedValue = .zero
+                } label: {
+                    Label("Reset sync", systemImage: "arrow.counterclockwise")
+                }
+            }
+        }
+
+        @ViewBuilder
+        private func content(playbackItem: MediaPlayerItem) -> some View {
+            Section("Size") {
+                sizeControls()
+            }
+            Section("Sync") {
+                syncControls()
+            }
+            if playbackItem.subtitleStreams.isNotEmpty {
+                Section(L10n.subtitles) {
+                    trackPicker(playbackItem: playbackItem)
                 }
             }
         }
@@ -45,13 +108,7 @@ extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
                     L10n.subtitles,
                     systemImage: systemImage
                 ) {
-                    if isInMenu {
-                        content(playbackItem: playbackItem)
-                    } else {
-                        Section(L10n.subtitles) {
-                            content(playbackItem: playbackItem)
-                        }
-                    }
+                    content(playbackItem: playbackItem)
                 }
                 .videoPlayerActionButtonTransition()
                 .assign(playbackItem.$selectedSubtitleStreamIndex, to: $selectedSubtitleStreamIndex)
