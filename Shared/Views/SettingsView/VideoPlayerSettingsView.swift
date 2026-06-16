@@ -315,9 +315,11 @@ struct VideoPlayerSettingsView: View {
         }
 
         Section {
+            #if os(iOS)
             ChevronButton(L10n.subtitleFont, content: subtitleFontName) {
                 router.route(to: .fontPicker(selection: $subtitleFontName))
             }
+            #endif
 
             Stepper(L10n.subtitleSize, value: $subtitleSize, in: 1 ... 20, step: 1) {
                 LabeledContent(L10n.subtitleSize) {

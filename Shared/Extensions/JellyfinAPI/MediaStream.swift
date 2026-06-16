@@ -19,16 +19,20 @@ extension MediaStream {
 
     // TODO: be a function that resolves against given client
     var asVLCPlaybackChild: VLCVideoPlayer.PlaybackChild? {
-        guard let deliveryURL, let client = Container.shared.currentUserSession()?.client else { return nil }
-
-        let deliveryPath = deliveryURL.removingFirst(if: client.configuration.url.absoluteString.last == "/")
-        guard let url = client.url(path: deliveryPath) else { return nil }
+        guard let url = resolvedDeliveryURL else { return nil }
 
         return .init(
             url: url,
             type: .subtitle,
             enforce: false
         )
+    }
+
+    var resolvedDeliveryURL: URL? {
+        guard let deliveryURL, let client = Container.shared.currentUserSession()?.client else { return nil }
+
+        let deliveryPath = deliveryURL.removingFirst(if: client.configuration.url.absoluteString.last == "/")
+        return client.url(path: deliveryPath)
     }
 
     var is4kVideo: Bool {
@@ -45,6 +49,11 @@ extension MediaStream {
 
     var isHDVideo: Bool {
         (width ?? 0) > 1900 && type == .video
+    }
+
+    var subtitleFormat: SubtitleFormat? {
+        guard type == .subtitle, let codec else { return nil }
+        return SubtitleFormat(rawValue: codec.lowercased())
     }
 
     // MARK: Property groups

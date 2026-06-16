@@ -58,10 +58,12 @@ extension VideoPlayer {
         func makeUIViewController(context: Context) -> UIVideoPlayerContainerViewController {
             let playerView = player
                 .environment(\.audioOffset, context.environment.audioOffset)
+                .environment(\.subtitleOffset, context.environment.subtitleOffset)
                 .eraseToAnyView()
 
             let playbackControlsView = playbackControls
                 .environment(\.audioOffset, context.environment.audioOffset)
+                .environment(\.subtitleOffset, context.environment.subtitleOffset)
                 .eraseToAnyView()
 
             return UIVideoPlayerContainerViewController(

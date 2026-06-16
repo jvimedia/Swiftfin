@@ -53,6 +53,7 @@ struct VideoPlayer: View {
         } playbackControls: {
             PlaybackControls()
         }
+        .environment(\.subtitleOffset, $subtitleOffset)
         .onAppear {
             manager.proxy = proxy
             manager.start()

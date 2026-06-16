@@ -79,7 +79,7 @@ class VLCMediaPlayerProxy: VideoMediaPlayerProxy,
     }
 
     func setSubtitleStream(_ stream: MediaStream) {
-        vlcUIProxy.setSubtitleTrack(.absolute(stream.index ?? -1))
+        // Subtitle rendering is handled by VLCSubtitleOverlayView
     }
 
     func setAspectFill(_ aspectFill: Bool) {
@@ -117,13 +117,6 @@ extension VLCMediaPlayerProxy {
 
     struct VLCPlayerView: View {
 
-        @Default(.VideoPlayer.Subtitle.subtitleColor)
-        private var subtitleColor
-        @Default(.VideoPlayer.Subtitle.subtitleFontName)
-        private var subtitleFontName
-        @Default(.VideoPlayer.Subtitle.subtitleSize)
-        private var subtitleSize
-
         @EnvironmentObject
         private var containerState: VideoPlayerContainerState
         @EnvironmentObject
@@ -147,27 +140,15 @@ extension VLCMediaPlayerProxy {
             if !baseItem.isLiveStream {
                 configuration.startSeconds = startSeconds
 
-                let subtitleIndex = item.indexMap.playerIndex(for: item.selectedSubtitleStreamIndex) ?? -1
-
                 if mediaSource.transcodingURL != nil {
                     configuration.audioIndex = .auto
                 } else {
                     let audioIndex = item.indexMap.playerIndex(for: item.selectedAudioStreamIndex) ?? -1
                     configuration.audioIndex = .absolute(audioIndex)
                 }
-
-                configuration.subtitleIndex = .absolute(subtitleIndex)
             }
 
-            configuration.subtitleSize = .absolute(25 - Defaults[.VideoPlayer.Subtitle.subtitleSize])
-            configuration.subtitleColor = .absolute(Defaults[.VideoPlayer.Subtitle.subtitleColor].uiColor)
             configuration.rate = .absolute(Defaults[.VideoPlayer.Playback.playbackRate])
-            if let font = UIFont(name: Defaults[.VideoPlayer.Subtitle.subtitleFontName], size: 1) {
-                configuration.subtitleFont = .absolute(font)
-            }
-
-            configuration.playbackChildren = item.subtitleStreams.sidecarSubtitles
-                .compactMap(\.asVLCPlaybackChild)
 
             return configuration
         }
@@ -216,6 +197,8 @@ extension VLCMediaPlayerProxy {
 
                             let tracks = info.subtitleTracks.map { (index: $0.index, title: $0.title) }
                             manager.playbackItem?.getSubtitleIndexes(subtitleTracks: tracks)
+                            // Subtitles are rendered by VLCSubtitleOverlayView
+                            proxy.setSubtitleTrack(.absolute(-1))
                         case .paused:
                             manager.setPlaybackRequestStatus(status: .paused)
                         }
@@ -232,23 +215,8 @@ extension VLCMediaPlayerProxy {
                     .onChange(of: manager.rate) { _, newValue in
                         proxy.setRate(.absolute(newValue))
                     }
-                    .backport
-                    .onChange(of: subtitleColor) { _, newValue in
-                        if let proxy = proxy as? MediaPlayerSubtitleConfigurable {
-                            proxy.setSubtitleColor(newValue)
-                        }
-                    }
-                    .backport
-                    .onChange(of: subtitleFontName) { _, newValue in
-                        if let proxy = proxy as? MediaPlayerSubtitleConfigurable {
-                            proxy.setSubtitleFontName(newValue)
-                        }
-                    }
-                    .backport
-                    .onChange(of: subtitleSize) { _, newValue in
-                        if let proxy = proxy as? MediaPlayerSubtitleConfigurable {
-                            proxy.setSubtitleFontSize(25 - newValue)
-                        }
+                    .overlay(alignment: .bottom) {
+                        VLCSubtitleOverlayView(playbackItem: playbackItem)
                     }
             }
         }
