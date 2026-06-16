@@ -1,0 +1,25 @@
+//
+// Swiftfin is subject to the terms of the Mozilla Public
+// License, v2.0. If a copy of the MPL was not distributed with this
+// file, you can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) 2026 Jellyfin & Jellyfin Contributors
+//
+
+public extension VLCVideoPlayer {
+    /// Represents supported video aspect ratios for the VLCVideoPlayer.
+    enum AspectRatio: String {
+        case `default`
+        case widescreen16x9 = "16:9"
+        case standard4x3 = "4:3"
+        case widescreen16x10 = "16:10"
+        case square1x1 = "1:1"
+        case cinema221x1 = "2.21:1"
+        case cinema235x1 = "2.35:1"
+        case cinema239x1 = "2.39:1"
+        case computer5x4 = "5:4"
+        case super16mm5x3 = "5:3"
+        case cinema185x1 = "1.85:1"
+        case cinema220x1 = "2.20:1"
+    }
+}
