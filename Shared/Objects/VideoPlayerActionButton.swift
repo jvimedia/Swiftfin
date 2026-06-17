@@ -15,6 +15,7 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
     case autoPlay
     #if os(iOS)
     case gestureLock
+    case pip
     #endif
     case playbackSpeed
 //    case playbackQuality
@@ -33,6 +34,8 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
         #if os(iOS)
         case .gestureLock:
             L10n.gestureLock
+        case .pip:
+            "Picture in Picture"
         #endif
         case .playbackSpeed:
             L10n.playbackSpeed
@@ -82,6 +85,7 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
         case .audio: "speaker.wave.2.fill"
         case .autoPlay: "play.circle.fill"
         case .gestureLock: "lock.circle.fill"
+        case .pip: "pip.enter"
         case .playbackSpeed: "speedometer"
 //        case .playbackQuality: "tv.circle.fill"
         case .playNextItem: "forward.end.circle.fill"
@@ -96,6 +100,7 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
         case .audio: "speaker.wave.2"
         case .autoPlay: "stop.circle"
         case .gestureLock: "lock.open.fill"
+        case .pip: "pip.exit"
         case .subtitles: "captions.bubble"
         default:
             systemImage
@@ -103,12 +108,22 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
     }
     #endif
 
+    #if os(iOS)
+    static let defaultBarActionButtons: [VideoPlayerActionButton] = [
+        .aspectFill,
+        .autoPlay,
+        .pip,
+        .playPreviousItem,
+        .playNextItem,
+    ]
+    #else
     static let defaultBarActionButtons: [VideoPlayerActionButton] = [
         .aspectFill,
         .autoPlay,
         .playPreviousItem,
         .playNextItem,
     ]
+    #endif
 
     static let defaultMenuActionButtons: [VideoPlayerActionButton] = [
         .audio,

@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import AVKit
 import Combine
 import Defaults
 import Engine
@@ -330,6 +331,11 @@ extension VideoPlayer {
         private let playbackControls: AnyView
         let containerState: VideoPlayerContainerState
 
+        #if os(iOS)
+        private var pipContentVC: AVPictureInPictureVideoCallViewController?
+        private(set) var pipController: AVPictureInPictureController?
+        #endif
+
         private var cancellables: Set<AnyCancellable> = []
         private var didInitiallyAppear: Bool = false
 
@@ -558,6 +564,10 @@ extension VideoPlayer {
 
             let isCompact = UIDevice.isPhone && view.bounds.size.isPortrait
 
+            #if os(iOS)
+            setupPiP()
+            #endif
+
             setupOnLoadViews()
             setupOnLoadConstraints()
 
@@ -583,30 +593,72 @@ extension VideoPlayer {
         // Setup player view separately after view appears to hopefully
         // prevent player playing before the view is done presenting
         private func setupPlayerView() {
+            let outerView: UIView
+
+            #if os(iOS)
+            if let pipContentVC {
+                // Wrap player in pipContentVC so VLC renders into the PiP window
+                pipContentVC.addChild(playerViewController)
+                pipContentVC.view.addSubview(playerView)
+                playerViewController.didMove(toParent: pipContentVC)
+                pipContentVC.view.backgroundColor = .black
+                NSLayoutConstraint.activate([
+                    playerView.topAnchor.constraint(equalTo: pipContentVC.view.topAnchor),
+                    playerView.leadingAnchor.constraint(equalTo: pipContentVC.view.leadingAnchor),
+                    playerView.trailingAnchor.constraint(equalTo: pipContentVC.view.trailingAnchor),
+                    playerView.bottomAnchor.constraint(equalTo: pipContentVC.view.bottomAnchor),
+                ])
+
+                addChild(pipContentVC)
+                pipContentVC.view.translatesAutoresizingMaskIntoConstraints = false
+                view.addSubview(pipContentVC.view)
+                view.sendSubviewToBack(pipContentVC.view)
+                pipContentVC.didMove(toParent: self)
+
+                let contentSource = AVPictureInPictureController.ContentSource(
+                    activeVideoCallSourceView: pipContentVC.view,
+                    contentViewController: pipContentVC
+                )
+                let pip = AVPictureInPictureController(contentSource: contentSource)
+                pip.canStartPictureInPictureAutomaticallyFromInline = true
+                pip.delegate = self
+                pipController = pip
+
+                outerView = pipContentVC.view
+            } else {
+                addChild(playerViewController)
+                view.addSubview(playerView)
+                view.sendSubviewToBack(playerView)
+                playerViewController.didMove(toParent: self)
+                playerView.backgroundColor = .black
+                outerView = playerView
+            }
+            #else
             addChild(playerViewController)
             view.addSubview(playerView)
             view.sendSubviewToBack(playerView)
             playerViewController.didMove(toParent: self)
             playerView.backgroundColor = .black
+            outerView = playerView
+            #endif
 
-            let bottomAnchor = playerView.bottomAnchor.constraint(
+            let bottomAnchor = outerView.bottomAnchor.constraint(
                 equalTo: supplementContainerView.topAnchor,
                 constant: compactPlayerBottomOffset
             )
-
             playerCompactBottomAnchor = bottomAnchor
 
             playerCompactConstraints = [
-                playerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                playerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                playerView.topAnchor.constraint(equalTo: view.topAnchor),
+                outerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                outerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                outerView.topAnchor.constraint(equalTo: view.topAnchor),
                 bottomAnchor,
             ]
             playerRegularConstraints = [
-                playerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                playerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                playerView.topAnchor.constraint(equalTo: view.topAnchor),
-                playerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                outerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                outerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                outerView.topAnchor.constraint(equalTo: view.topAnchor),
+                outerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             ]
 
             if containerState.isCompact {
@@ -615,6 +667,24 @@ extension VideoPlayer {
                 NSLayoutConstraint.activate(playerRegularConstraints)
             }
         }
+
+        #if os(iOS)
+        private func setupPiP() {
+            guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
+            let vc = AVPictureInPictureVideoCallViewController()
+            vc.preferredContentSize = CGSize(width: 1280, height: 720)
+            pipContentVC = vc
+        }
+
+        func startPiP() {
+            guard let pipController else { return }
+            if pipController.isPictureInPictureActive {
+                pipController.stopPictureInPicture()
+            } else {
+                pipController.startPictureInPicture()
+            }
+        }
+        #endif
 
         private func setupOnLoadViews() {
             addChild(playbackControlsViewController)
@@ -881,6 +951,33 @@ extension VideoPlayer {
         #endif
     }
 }
+
+// MARK: - iOS PiP Delegate
+
+#if os(iOS)
+extension VideoPlayer.UIVideoPlayerContainerViewController: AVPictureInPictureControllerDelegate {
+
+    func pictureInPictureControllerDidStartPictureInPicture(
+        _ pictureInPictureController: AVPictureInPictureController
+    ) {
+        containerState.isPiPActive = true
+        containerState.isPresentingOverlay = false
+    }
+
+    func pictureInPictureControllerDidStopPictureInPicture(
+        _ pictureInPictureController: AVPictureInPictureController
+    ) {
+        containerState.isPiPActive = false
+    }
+
+    func pictureInPictureController(
+        _ pictureInPictureController: AVPictureInPictureController,
+        restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
+    ) {
+        completionHandler(true)
+    }
+}
+#endif
 
 // MARK: - tvOS PressEvent
 

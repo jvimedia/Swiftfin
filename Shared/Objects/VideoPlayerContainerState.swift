@@ -135,6 +135,9 @@ class VideoPlayerContainerState: ObservableObject {
     weak var manager: MediaPlayerManager?
 
     #if os(iOS)
+    @Published
+    var isPiPActive: Bool = false
+
     var panHandlingAction: (any _PanHandlingAction)?
     var didSwipe: Bool = false
     var lastTapLocation: CGPoint?

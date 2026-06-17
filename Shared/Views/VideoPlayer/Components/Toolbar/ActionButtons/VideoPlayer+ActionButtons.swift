@@ -72,6 +72,8 @@ extension VideoPlayer.PlaybackControls.Toolbar {
             #if os(iOS)
             case .gestureLock:
                 GestureLock()
+            case .pip:
+                PictureInPicture()
             #endif
             case .playbackSpeed:
                 PlaybackRateMenu()
